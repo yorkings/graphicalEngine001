@@ -2,8 +2,6 @@
 #include "general.h"
 
 class vec3{
-    private:
-
     public:
         __m128 v;
         inline vec3():v(_mm_setzero_ps()){}
@@ -13,10 +11,13 @@ class vec3{
         inline float y()const{return _mm_cvtss_f32(_mm_shuffle_ps(v,v,_MM_SHUFFLE(1,1,1,1)));}
         inline float z()const{return _mm_cvtss_f32(_mm_shuffle_ps(v,v,_MM_SHUFFLE(2,2,2,2)));}
         //indexing
-        inline float operator[](int i)const{ return (i==0) ? x() : ((i==1) ? y():z());}
-        inline const float& operator[](int i){ return (i == 0)? x():((i==1)?y() :z()) ;}
+        inline float operator[](int i) const { 
+            alignas(16) float f[4];
+            _mm_store_ps(f, v);
+            return f[i];
+        }
         //operations
-        inline vec3 operator-()const{ return vec3(_mm_xor_ps(v,_mm_set1_ps(-0.0)));}
+        inline vec3 operator-()const{ return vec3(_mm_xor_ps(v,_mm_set1_ps(-0.0f)));}
 
         inline  vec3 &operator+=(const vec3 &b){ v=_mm_add_ps(v,b.v);return *this;}
 
@@ -85,3 +86,6 @@ inline vec3 cross(const vec3 &u, const vec3 &v){
 inline vec3 unit_vector(const vec3& v) {
     return v / v.length();
 }
+
+using point3=vec3;
+using color=vec3;
