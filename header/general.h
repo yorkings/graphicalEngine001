@@ -22,7 +22,7 @@ using std::make_shared;
 using std::shared_ptr;
 
 
-const float infinity =std::numeric_limits<double>::infinity();
+const float infinity =std::numeric_limits<float>::infinity();
  
 
 std::string get_time_current(){

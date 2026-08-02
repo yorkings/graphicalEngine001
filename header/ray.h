@@ -35,7 +35,7 @@ struct alignas(16) Raypackets {
     }
 };
 
-inline void ray_at_4(__m128& px, __m128& py, __m128& pz,const Raypackets& ray, __m128 t) {
+inline void ray_at_t4(__m128& px, __m128& py, __m128& pz,const Raypackets& ray, __m128 t) {
     px = _mm_add_ps(ray.orig_x, _mm_mul_ps(t, ray.dir_x));
     py = _mm_add_ps(ray.orig_y, _mm_mul_ps(t, ray.dir_y));
     pz = _mm_add_ps(ray.orig_z, _mm_mul_ps(t, ray.dir_z));

@@ -5,7 +5,7 @@ class vec3{
     public:
         __m128 v;
         inline vec3():v(_mm_setzero_ps()){}
-        inline vec3(float x,float y,float z):v(_mm_set_ps(0.0,z,y,x)){}
+        inline vec3(float x,float y,float z):v(_mm_set_ps(0.0f,z,y,x)){}
         inline vec3(__m128 v):v(v){}
         inline float x()const {return _mm_cvtss_f32(v);}
         inline float y()const{return _mm_cvtss_f32(_mm_shuffle_ps(v,v,_MM_SHUFFLE(1,1,1,1)));}

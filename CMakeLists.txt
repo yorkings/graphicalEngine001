@@ -33,22 +33,22 @@ find_package(OpenMP REQUIRED)
 #     src/physics.cpp
 #     src/utils.cpp
 # )
-add_executable(GraphicsEngine main.cpp)
+add_executable(GraphicsRenderer main.cpp)
 # Apply OpenMP flags and optimization
-target_link_libraries(GraphicsEngine PRIVATE 
+target_link_libraries(GraphicsRenderer PRIVATE 
     glfw
     vk-bootstrap
     OpenGL::GL
     Vulkan::Vulkan 
     OpenMP::OpenMP_CXX
 )
-target_compile_options(GraphicsEngine PRIVATE -O3)
+target_compile_options(GraphicsRenderer PRIVATE -O3)
 
 # Optional: Add more optimization flags
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(GraphicsEngine PRIVATE -march=native -mtune=native -ffast-math )
+    target_compile_options(GraphicsRenderer PRIVATE -march=native -mtune=native -ffast-math )
     # Required on Linux/Unix for dynamic symbol loading used by vk-bootstrap
-    target_link_libraries(GraphicsEngine PRIVATE ${CMAKE_DL_LIBS})
+    target_link_libraries(GraphicsRenderer PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 # Print status to verify flags
@@ -58,9 +58,9 @@ if(OpenMP_CXX_FOUND)
 endif()
 # For debugging (optional)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(GraphicsEngine PRIVATE -g -O0)
+    target_compile_options(GraphicsRenderer PRIVATE -g -O0)
 else()
-    target_compile_options(GraphicsEngine PRIVATE -O3)
+    target_compile_options(GraphicsRenderer PRIVATE -O3)
 endif()
 
 

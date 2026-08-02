@@ -24,3 +24,5 @@ then you see the generated file  run
 ``` bash
 ./GraphicsEngine 
 ```
+
+4. ensure you have  installed vulkan libraries and headers if not see vulkan docs
