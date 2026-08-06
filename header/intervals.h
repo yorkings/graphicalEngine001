@@ -1,6 +1,7 @@
 #pragma once
 #include "general.h"
 
+
 struct alignas(16) Interval4 {
     __m128 min;
     __m128 max;

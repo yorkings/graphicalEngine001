@@ -36,6 +36,7 @@ class hit_list{
         std::vector<shared_ptr<hitable>> objects;
 
         ~hit_list()=default;
+        hit_list(){}
         hit_list(shared_ptr<hitable>object){add(object);}
 
         void add(shared_ptr<hitable>object){return objects.push_back(object);}
@@ -55,7 +56,7 @@ class hit_list{
             rec.hit_mask = accumulated_hit_mask;
             return hit_anything;
         }
-        
+
     private:
         inline void update_hit_record(hit_rec& dst, const hit_rec& src, __m128 lane_mask) const {
             dst.t = blend_ps(dst.t, src.t, lane_mask);            

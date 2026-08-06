@@ -1,76 +1,45 @@
-#include <iostream>
-#include <vector>
-#include <GLFW/glfw3.h>
-#include "VkBootstrap.h"
+#include "header/general.h"
+#include "header/polygons.h"
+#include "header/camera.h"
+#include "header/utils/helpers.h"
+
 
 int main() {
-    // 1. Build Headless Vulkan Instance for background compute
-    vkb::InstanceBuilder instance_builder;    
-    auto instance_ret = instance_builder
-        .set_app_name("RayTracerEngine")
-        .set_headless()// Tells VkBootstrap this Vulkan instance is for headless compute
-#ifndef NDEBUG
-        .request_validation_layers(true)
-        .use_default_debug_messenger()
-#endif
-        .build();
+    RenderQueries user_config = fetch_user_queries();
 
-    if (!instance_ret) {
-        std::cerr << "Failed to create Vulkan instance: " 
-                  << instance_ret.error().message() << "\n";
+    vkb::Instance vkb_instance;
+    if (!init_vulkan_compute(vkb_instance)) {
         return -1;
     }
+    // Setup Scene & Camera
+    hit_list world;
+    world.add(make_shared<sphere>(point3(0,0,-1), 0.5));
+    world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
+    camera cam;
+    cam.image_width = user_config.width;
+    cam.samples_per_pixel = user_config.samples;
+    
 
-    vkb::Instance vkb_instance = instance_ret.value();
-    std::cout << "Vulkan Compute Instance created successfully!\n";
+    std::vector<uint32_t> screen_pixels;
 
-    // 2. Select Physical Device (GPU) for Compute
-    vkb::PhysicalDeviceSelector selector{ vkb_instance };
-    auto phys_ret = selector
-        .set_minimum_version(1, 2)
-        .allow_any_gpu_device_type(true)
-        .select();
+    //Render CPU Ray Tracer & Save Output
+    cam.render(world, screen_pixels);
+    save_image(user_config.filename, cam.image_width, cam.image_height, screen_pixels);
 
-    if (!phys_ret) {
-        std::cerr << "Failed to select Vulkan GPU: " << phys_ret.error().message() << "\n";
-        vkb::destroy_instance(vkb_instance);
-        return -1;
-    }
-    vkb::PhysicalDevice vkb_physical_device = phys_ret.value();
-    std::cout << "Selected GPU: " << vkb_physical_device.name << "\n";
-
-    // 3. Initialize GLFW & OpenGL Window for Display
-    if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW\n";
-        vkb::destroy_instance(vkb_instance);
-        return -1;
-    }
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Graphics Renderer", nullptr, nullptr);
+    // Create Window & Upload Texture for Viewing
+    GLuint display_texture = 0;
+    GLFWwindow* window = create_display_window(cam.image_width, cam.image_height, "Ray Tracer Display", display_texture);
     if (!window) {
-        std::cerr << "Failed to create GLFW window\n";
-        glfwTerminate();
-        vkb::destroy_instance(vkb_instance);
+        cleanup(nullptr, 0, &vkb_instance);
         return -1;
     }
-    glfwMakeContextCurrent(window);
 
-    // 4. Main Render Loop
+    update_display_texture(display_texture, cam.image_width, cam.image_height, screen_pixels);
+    //  Interactive Display Loop
     while (!glfwWindowShouldClose(window)) {
-        glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glfwSwapBuffers(window);
-        glfwPollEvents();
+        display_frame(window, display_texture);
     }
-
-    // 5. Cleanup
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    vkb::destroy_instance(vkb_instance);
-
+    //  Final Cleanup 
+    cleanup(window, display_texture, &vkb_instance);
     return 0;
 }

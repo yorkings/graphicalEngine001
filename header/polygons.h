@@ -2,7 +2,7 @@
 #include "ray.h"
 #include "hit_funcs.h"
 
-class sphere{
+class sphere: public hitable{
     private:
         __m128 cen_x,cen_y,cen_z;
         __m128 radius;
@@ -70,16 +70,16 @@ class sphere{
         }
 };
 
-class quad{
-    private:
-        
-    public:
-        quad(){}
-        bool hit(){}
-};
-
-class triangle{
-    public:
-        triangle(){}
-        bool hit(){}
-};
+// class quad{
+    // private:
+        // 
+    // public:
+        // quad(){}
+        // bool hit(){}
+// };
+// 
+// class triangle{
+    // public:
+        // triangle(){}
+        // bool hit(){}
+// };
