@@ -3,21 +3,24 @@
 #include "ray.h"
 #include "intervals.h"
 
+class material;
+
 struct hit_rec{
-    __m128 t;             
-    __m128 p_x, p_y, p_z; 
-    __m128 nx, ny, nz;    
-    __m128 hit_mask;
-   inline void set_face_normal_4(const Raypackets& r, __m128 out_nx, __m128 out_ny, __m128 out_nz) {
-        __m128 dot_x = _mm_mul_ps(r.dir_x, out_nx);
-        __m128 dot_y = _mm_mul_ps(r.dir_y, out_ny);
-        __m128 dot_z = _mm_mul_ps(r.dir_z, out_nz);
-        __m128 dot_prod=_mm_add_ps(_mm_add_ps(dot_x ,dot_y),dot_z);
-    
-        __m128 is_back_face = _mm_cmpgt_ps(dot_prod, _mm_setzero_ps());
-        //Flip the normal sign bit for back-facing rays using XOR (No IF/ELSE branches!)
-        __m128 sign_bit = _mm_set1_ps(-0.0f); // Bitmask with only IEEE sign bit set (0x80000000)
-        __m128 flip_mask = _mm_and_ps(is_back_face, sign_bit);
+    vec4 t;             
+    vec4 p_x, p_y, p_z; 
+    vec4 nx, ny, nz;    
+    vec4 hit_mask;
+    vec4 front_face;
+    std::array<const material*,4> mat;
+   inline void set_face_normal_4(const Raypackets& r, vec4 out_nx, vec4 out_ny, vec4 out_nz) {
+        vec4 dot_prod;
+        dot_simd4(r.dir_x,r.dir_y,r.dir_z,out_nx,out_ny,out_nz,dot_prod);
+              
+        front_face = _mm_cmplt_ps(dot_prod, _mm_setzero_ps());
+        vec4 is_back_face = _mm_cmpgt_ps(dot_prod, _mm_setzero_ps());
+        //Flip the normal sign bit for back-facing rays using XOR 
+        vec4 sign_bit = _mm_set1_ps(-0.0f); 
+        vec4 flip_mask = _mm_and_ps(is_back_face, sign_bit);
         // XORing with 0x80000000 flips the float sign (+ to -, - to +)
         nx = _mm_xor_ps(out_nx, flip_mask);
         ny = _mm_xor_ps(out_ny, flip_mask);
@@ -26,25 +29,27 @@ struct hit_rec{
 };
 
 struct hitable{
-    ~hitable()=default;
+    virtual ~hitable()=default;
     virtual bool hit(const Raypackets &r_packs,const Interval4& ray_t,hit_rec& rec)const{return false;}
 
 };
 
-class hit_list{
+class hit_list:public hitable{
     public:
         std::vector<shared_ptr<hitable>> objects;
-
+        std::vector<shared_ptr<material>> materials;
         ~hit_list()=default;
         hit_list(){}
         hit_list(shared_ptr<hitable>object){add(object);}
 
         void add(shared_ptr<hitable>object){return objects.push_back(object);}
+        void add_material(shared_ptr<material> mat) {materials.push_back(mat);}
         void clear(){objects.clear();}
+
         virtual bool hit(const Raypackets& r, Interval4 ray_t, hit_rec& rec) const {
             hit_rec temp_rec;
             bool hit_anything = false;
-            __m128 accumulated_hit_mask=_mm_setzero_ps();
+            vec4 accumulated_hit_mask=_mm_setzero_ps();
             for(const auto &object:objects){
                 if(object->hit(r, ray_t, temp_rec)){
                     hit_anything = true;
@@ -58,7 +63,7 @@ class hit_list{
         }
 
     private:
-        inline void update_hit_record(hit_rec& dst, const hit_rec& src, __m128 lane_mask) const {
+        inline void update_hit_record(hit_rec& dst, const hit_rec& src, vec4 lane_mask) const {
             dst.t = blend_ps(dst.t, src.t, lane_mask);            
             dst.p_x = blend_ps(dst.p_x, src.p_x, lane_mask);
             dst.p_y = blend_ps(dst.p_y, src.p_y, lane_mask);
@@ -66,8 +71,14 @@ class hit_list{
             dst.nx = blend_ps(dst.nx, src.nx, lane_mask);
             dst.ny = blend_ps(dst.ny, src.ny, lane_mask);
             dst.nz = blend_ps(dst.nz, src.nz, lane_mask);
+            dst.front_face = blend_ps(dst.front_face, src.front_face, lane_mask);
+
+            int mask_bits = _mm_movemask_ps(lane_mask);    
+            if (mask_bits & 1) dst.mat[0] = src.mat[0];
+            if (mask_bits & 2) dst.mat[1] = src.mat[1];
+            if (mask_bits & 4) dst.mat[2] = src.mat[2];
+            if (mask_bits & 8) dst.mat[3] = src.mat[3];
         }
-        // SIMD Bitwise Selection Helper: (mask ? b : a)
-        inline __m128 blend_ps(__m128 a, __m128 b, __m128 mask) const {return _mm_blendv_ps(a,b,mask);} 
+        inline vec4 blend_ps(vec4 a, vec4 b, vec4 mask) const {return _mm_blendv_ps(a,b,mask);} 
 
 };  

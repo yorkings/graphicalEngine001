@@ -1,5 +1,6 @@
 #pragma once
 #include "vec3.h"
+#include "vec3_simd4.h"
 class Ray {
     private:
         vec3 orig;
@@ -17,10 +18,10 @@ class Ray {
 };
 
 struct alignas(16) Raypackets {
-    __m128 orig_x, orig_y, orig_z;
-    __m128 dir_x,  dir_y,  dir_z;
-    __m128 time;
-    __m128 t_max;
+    vec4 orig_x, orig_y, orig_z;
+    vec4 dir_x,  dir_y,  dir_z;
+    vec4 time;
+    vec4 t_max;
     Raypackets() = default;
     inline Raypackets(const Ray r[4]) {
         orig_x = _mm_set_ps(r[3].origin().x(), r[2].origin().x(), r[1].origin().x(), r[0].origin().x());
@@ -35,7 +36,7 @@ struct alignas(16) Raypackets {
     }
 };
 
-inline void ray_at_t4(__m128& px, __m128& py, __m128& pz,const Raypackets& ray, __m128 t) {
+inline void ray_at_t4(vec4& px, vec4& py, vec4& pz,const Raypackets& ray, vec4 t) {
     px = _mm_add_ps(ray.orig_x, _mm_mul_ps(t, ray.dir_x));
     py = _mm_add_ps(ray.orig_y, _mm_mul_ps(t, ray.dir_y));
     pz = _mm_add_ps(ray.orig_z, _mm_mul_ps(t, ray.dir_z));

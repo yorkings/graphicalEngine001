@@ -11,8 +11,7 @@ class camera{
         int   image_width =0;
         int image_height=0;
         int   samples_per_pixel  = 10;  
-        int   max_depth = 50;
-        
+        int   max_depth = 50;        
         // View camera geometry
         float vfov     = 90.0f;           // Vertical field-of-view in degrees
         point3 lookFrom= point3(0, 0, 0); // Point camera is looking from
@@ -43,26 +42,29 @@ class camera{
             std::atomic<int> rows_completed(0);
             int total_rows = image_height;
 
-            #pragma omp parallel for schedule(dynamic, 1)
+            #pragma omp parallel for schedule(guided)
             for (int j = 0; j < image_height; j += 2) {
                 int thread_id = omp_get_thread_num();
                 int num_threads_local = omp_get_num_threads();
                 for (int i = 0; i < image_width; i += 2) {
-                    __m128 accum_r = _mm_setzero_ps();
-                    __m128 accum_g = _mm_setzero_ps();
-                    __m128 accum_b = _mm_setzero_ps();                
-                    // Stratified subpixel sampling
+                    seed_rng_simd4_quad(i, j,0);
+                    vec4 accum_r = _mm_setzero_ps();
+                    vec4 accum_g = _mm_setzero_ps();
+                    vec4 accum_b = _mm_setzero_ps();              
+                    // Stratified subpixel sampling                    
                     for (int s_j = 0; s_j < spp_sqrt; ++s_j) {
                         for (int s_i = 0; s_i < spp_sqrt; ++s_i) {
                             Raypackets pack = get_ray_packs(i, j, s_i, s_j);                        
-                            __m128 pack_r, pack_g, pack_b;
+                            vec4 pack_r, pack_g, pack_b;
                             ray_color_packet_simd(pack, world, max_depth, pack_r, pack_g, pack_b);
                             accum_r = _mm_add_ps(accum_r, pack_r);
                             accum_g = _mm_add_ps(accum_g, pack_g);
                             accum_b = _mm_add_ps(accum_b, pack_b);
-
                         }
                     }
+                    accum_r = sanitize_simd4(accum_r);
+                    accum_g = sanitize_simd4(accum_g);
+                    accum_b = sanitize_simd4(accum_b);
                     // Vectorized color normalization, gamma correction, and 32-bit packing
                     uint32_t packed_pixels[4];
                     write_color_simd4(accum_r, accum_g, accum_b, pixel_sample_scale, packed_pixels);
@@ -92,7 +94,7 @@ class camera{
                             else if (k == filled) std::cerr << ">";
                             else std::cerr << " ";
                         }
-                        std::cerr << "] " << percent << "%  "<< "Rows: " << completed << "/" << total_rows<< std::flush;
+                        std::cerr << "] " << percent << "%  "<< "Rows: " << completed << "/" << total_rows <<"  Thread: " << thread_id << "/" << num_threads_local<< std::flush;
                     }
                 }                    
             }
@@ -106,11 +108,18 @@ class camera{
         float pixel_sample_scale;
         int spp_sqrt;
         float recip_sqrt_spp; 
-        //system camera functions
         vec3   u, v, w;            // Camera frame coordinate system
         // Defocus blur (Depth of Field) parameters
         vec3   defocus_disk_u; 
         vec3   defocus_disk_v;
+        // Pre-broadcasted SIMD constants 
+        vec4 v_cam_center_x, v_cam_center_y, v_cam_center_z;
+        vec4 v_p00_x, v_p00_y, v_p00_z;
+        vec4 v_pdu_x, v_pdu_y, v_pdu_z;
+        vec4 v_pdv_x, v_pdv_y, v_pdv_z;
+        vec4 v_def_u_x, v_def_u_y, v_def_u_z;
+        vec4 v_def_v_x, v_def_v_y, v_def_v_z;
+        vec4 v_recip_sqrt_spp;
 
         void initialize(){
             if(image_width>0 && image_height<=0){
@@ -118,12 +127,12 @@ class camera{
             }
             spp_sqrt = static_cast<int>(std::sqrt(samples_per_pixel));
             recip_sqrt_spp = 1.0f / static_cast<float>(spp_sqrt);
-            pixel_sample_scale = 1.0f / static_cast<float>(samples_per_pixel);
+            pixel_sample_scale = 1.0f /(spp_sqrt * spp_sqrt);
             camera_center=lookFrom;
             //viewport dimensions
             float theta       = degrees_to_radians(vfov);
             float h           = std::tan(theta / 2.0f);
-            float viewport_h  = 2.0f * h;
+            float viewport_h  = 2.0f * h*focus_dist;
             float viewport_w  = viewport_h * aspect_ratio;
             //camera coordinates
             w=unit_vector(lookFrom-lookAt);
@@ -134,123 +143,217 @@ class camera{
             pixel_delta_u = viewport_u / static_cast<float>(image_width);
             pixel_delta_v = viewport_v / static_cast<float>(image_height);
             // Calculate upper-left pixel center (Pixel 0,0)
-            vec3 viewport_upper_left = camera_center - (w) - (viewport_u * 0.5f) - (viewport_v * 0.5f);
-            pixel00_loc= viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
+            vec3 viewport_upper_left = camera_center - (focus_dist *w) - (viewport_u * 0.5f) - (viewport_v * 0.5f);
+            pixel00_loc= viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);           
             auto defocus_radius = focus_dist * std::tan(degrees_to_radians(defocus_angle / 2.0f));
             defocus_disk_u = u * defocus_radius;
-            defocus_disk_v = v * defocus_radius;            
+            defocus_disk_v = v * defocus_radius;
+            // Broadcast camera vectors to SIMD registers once during setup
+            v_cam_center_x   = _mm_set1_ps(camera_center.x());
+            v_cam_center_y   = _mm_set1_ps(camera_center.y());
+            v_cam_center_z   = _mm_set1_ps(camera_center.z());
+
+            v_p00_x          = _mm_set1_ps(pixel00_loc.x());
+            v_p00_y          = _mm_set1_ps(pixel00_loc.y());
+            v_p00_z          = _mm_set1_ps(pixel00_loc.z());
+
+            v_pdu_x          = _mm_set1_ps(pixel_delta_u.x());
+            v_pdu_y          = _mm_set1_ps(pixel_delta_u.y());
+            v_pdu_z          = _mm_set1_ps(pixel_delta_u.z());
+
+            v_pdv_x          = _mm_set1_ps(pixel_delta_v.x());
+            v_pdv_y          = _mm_set1_ps(pixel_delta_v.y());
+            v_pdv_z          = _mm_set1_ps(pixel_delta_v.z());
+
+            v_def_u_x        = _mm_set1_ps(defocus_disk_u.x());
+            v_def_u_y        = _mm_set1_ps(defocus_disk_u.y());
+            v_def_u_z        = _mm_set1_ps(defocus_disk_u.z());
+
+            v_def_v_x        = _mm_set1_ps(defocus_disk_v.x());
+            v_def_v_y        = _mm_set1_ps(defocus_disk_v.y());
+            v_def_v_z        = _mm_set1_ps(defocus_disk_v.z());
+
+            v_recip_sqrt_spp = _mm_set1_ps(recip_sqrt_spp);            
 
         }
-        inline Ray get_ray(int i, int j, int s_i = 0, int s_j = 0) const {
-            float offset_x = (s_i + random_float()) * recip_sqrt_spp;
-            float offset_y = (s_j + random_float()) * recip_sqrt_spp;
-
-            auto pixel_sample = pixel00_loc + ((i + offset_x) * pixel_delta_u) + ((j + offset_y) * pixel_delta_v);
-            auto ray_origin = (defocus_angle <= 0) ? camera_center :defocus_disk_sample();
-            auto ray_direction = pixel_sample - ray_origin;
-            auto ray_time = random_float();
-
-            return Ray(ray_origin, ray_direction, ray_time);
+         
+        inline static vec4 sanitize_simd4(const vec4& v) {
+            vec4 is_nan_or_inf = _mm_cmpunord_ps(v, v);
+            vec4 clean = _mm_blendv_ps(v, _mm_setzero_ps(), is_nan_or_inf);
+            return _mm_max_ps(clean, _mm_setzero_ps());
         }
+  
         inline Raypackets get_ray_packs(int i,int j,int s_i = 0, int s_j = 0)const{
-            Ray r[4]={get_ray(i,j,s_i,s_j),
-                    get_ray(i+1,j,s_i,s_j),
-                    get_ray(i,j+1,s_i,s_j),
-                    get_ray(i+1,j+1,s_i,s_j)
-                };
-            return Raypackets(r);
+           vec4 pix_i=_mm_set_ps(static_cast<float>(i + 1), static_cast<float>(i),static_cast<float>(i + 1), static_cast<float>(i));
+           vec4 pix_j=_mm_set_ps(static_cast<float>(j + 1), static_cast<float>(j + 1),static_cast<float>(j), static_cast<float>(j));
+
+            vec4 rand_u, rand_v;
+            random_float_simd4(rand_u);
+            random_float_simd4(rand_v);
+
+            vec4 s_i_vec    = _mm_set1_ps(static_cast<float>(s_i));
+            vec4 s_j_vec    = _mm_set1_ps(static_cast<float>(s_j));
+            vec4 offset_x = _mm_mul_ps(_mm_add_ps(s_i_vec, rand_u), v_recip_sqrt_spp);
+            vec4 offset_y = _mm_mul_ps(_mm_add_ps(s_j_vec, rand_v), v_recip_sqrt_spp);
+            vec4 sample_coord_x = _mm_add_ps(pix_i, offset_x);
+            vec4 sample_coord_y = _mm_add_ps(pix_j, offset_y);
+
+            vec4 sample_x = _mm_add_ps(v_p00_x,_mm_add_ps(_mm_mul_ps(sample_coord_x,v_pdu_x),_mm_mul_ps(sample_coord_y,v_pdv_x)));
+            vec4 sample_y = _mm_add_ps(v_p00_y, _mm_add_ps(_mm_mul_ps(sample_coord_x, v_pdu_y), _mm_mul_ps(sample_coord_y, v_pdv_y)));
+            vec4 sample_z = _mm_add_ps(v_p00_z, _mm_add_ps(_mm_mul_ps(sample_coord_x, v_pdu_z), _mm_mul_ps(sample_coord_y, v_pdv_z)));           
+
+            vec4 orig_x, orig_y, orig_z;
+            if(defocus_angle <= 0.0f) {
+                orig_x = _mm_set1_ps(camera_center.x());
+                orig_y = _mm_set1_ps(camera_center.y());
+                orig_z = _mm_set1_ps(camera_center.z());
+            } else {
+                defocus_disk_sample_simd4(orig_x, orig_y, orig_z);
+            } 
+            Raypackets ray_packs;
+            ray_packs.orig_x=orig_x;
+            ray_packs.orig_y=orig_y;
+            ray_packs.orig_z=orig_z;
+            ray_packs.dir_x=_mm_sub_ps(sample_x,orig_x);
+            ray_packs.dir_y=_mm_sub_ps(sample_y,orig_y);
+            ray_packs.dir_z=_mm_sub_ps(sample_z,orig_z);
+            ray_packs.time   = _mm_setzero_ps();            
+            return ray_packs;
         }
-        inline void get_background_simd(const Raypackets& pack, __m128& bg_r, __m128& bg_g, __m128& bg_b) const {
-            __m128 dir_lensq   = _mm_add_ps(_mm_mul_ps(pack.dir_x, pack.dir_x),_mm_add_ps(_mm_mul_ps(pack.dir_y, pack.dir_y),_mm_mul_ps(pack.dir_z, pack.dir_z)));
-            __m128 inv_dir_len = _mm_rsqrt_ps(dir_lensq);
-            __m128 unit_y      = _mm_mul_ps(pack.dir_y, inv_dir_len);            
+
+
+        inline void get_background_simd(const Raypackets& pack, vec4& bg_r, vec4& bg_g, vec4& bg_b) const {
+            vec4 unit_x, unit_y, unit_z;
+            normalize_simd4(pack.dir_x, pack.dir_y, pack.dir_z, unit_x, unit_y, unit_z);
             // t = 0.5 * (unit_y + 1.0)
-            __m128 t           = _mm_mul_ps(_mm_set1_ps(0.5f), _mm_add_ps(unit_y, _mm_set1_ps(1.0f)));
-            __m128 one_minus_t = _mm_sub_ps(_mm_set1_ps(1.0f), t);
+            vec4 t           = _mm_mul_ps(_mm_set1_ps(0.5f), _mm_add_ps(unit_y, _mm_set1_ps(1.0f)));
+            vec4 one_minus_t = _mm_sub_ps(_mm_set1_ps(1.0f), t);
             // color = (1.0 - t)*White + t*SkyBlue(0.5, 0.7, 1.0)
-            bg_r = _mm_add_ps(_mm_mul_ps(one_minus_t, _mm_set1_ps(1.0f)), _mm_mul_ps(t, _mm_set1_ps(0.5f)));
-            bg_g = _mm_add_ps(_mm_mul_ps(one_minus_t, _mm_set1_ps(1.0f)), _mm_mul_ps(t, _mm_set1_ps(0.7f)));
-            bg_b = _mm_add_ps(_mm_mul_ps(one_minus_t, _mm_set1_ps(1.0f)), _mm_mul_ps(t, _mm_set1_ps(1.0f)));
+            bg_r = _mm_add_ps(one_minus_t, _mm_mul_ps(t, _mm_set1_ps(0.5f)));
+            bg_g = _mm_add_ps(one_minus_t, _mm_mul_ps(t, _mm_set1_ps(0.7f)));
+            bg_b = _mm_add_ps(one_minus_t, _mm_mul_ps(t, _mm_set1_ps(1.0f)));
         }
-        void ray_color_packet_simd(const Raypackets& pack, const hit_list& world, int depth,__m128& out_r, __m128& out_g, __m128& out_b){
+        
+        inline vec4 scatter_materials_simd(const Raypackets& in_pack,const hit_rec& rec,vec4& atten_r, vec4& atten_g, vec4& atten_b,Raypackets& scatt_pack) {
+            atten_r = _mm_setzero_ps();
+            atten_g = _mm_setzero_ps();
+            atten_b = _mm_setzero_ps(); 
+
+            scatt_pack.orig_x = in_pack.orig_x;
+            scatt_pack.orig_y = in_pack.orig_y;
+            scatt_pack.orig_z = in_pack.orig_z;
+            scatt_pack.dir_x  = _mm_setzero_ps();
+            scatt_pack.dir_y  = _mm_setzero_ps();
+            scatt_pack.dir_z  = _mm_setzero_ps();
+            scatt_pack.time   = in_pack.time; 
+
+            vec4 scatter_mask = _mm_setzero_ps();
+            int processed_lanes = 0;
+
+            int hit_bits = _mm_movemask_ps(rec.hit_mask);            
+            for (int i = 0; i < 4; ++i) {
+                if (!(hit_bits & (1 << i)) || (processed_lanes & (1 << i))) continue;                
+                const material* mat = rec.mat[i];
+                if (!mat) continue;                               
+                vec4 match_mask =_mm_castsi128_ps(_mm_set_epi32(
+                        rec.mat[3] == mat ? -1 : 0,
+                        rec.mat[2] == mat ? -1 : 0,
+                        rec.mat[1] == mat ? -1 : 0,
+                        rec.mat[0] == mat ? -1 : 0
+                    )); 
+                match_mask = _mm_and_ps(match_mask, rec.hit_mask);                   
+                vec4 cur_atten_r, cur_atten_g, cur_atten_b;
+                Raypackets cur_scatt;
+                vec4 cur_mask = mat->scatter(in_pack, rec, cur_atten_r, cur_atten_g, cur_atten_b, cur_scatt);
+                cur_mask = _mm_and_ps(cur_mask, match_mask);
+
+                atten_r = _mm_blendv_ps(atten_r, cur_atten_r, cur_mask);
+                atten_g = _mm_blendv_ps(atten_g, cur_atten_g, cur_mask);
+                atten_b = _mm_blendv_ps(atten_b, cur_atten_b, cur_mask); 
+
+                scatt_pack.orig_x = _mm_blendv_ps(scatt_pack.orig_x, cur_scatt.orig_x, cur_mask);
+                scatt_pack.orig_y = _mm_blendv_ps(scatt_pack.orig_y, cur_scatt.orig_y, cur_mask);
+                scatt_pack.orig_z = _mm_blendv_ps(scatt_pack.orig_z, cur_scatt.orig_z, cur_mask);                
+                scatt_pack.dir_x  = _mm_blendv_ps(scatt_pack.dir_x,  cur_scatt.dir_x,  cur_mask);
+                scatt_pack.dir_y  = _mm_blendv_ps(scatt_pack.dir_y,  cur_scatt.dir_y,  cur_mask);
+                scatt_pack.dir_z  = _mm_blendv_ps(scatt_pack.dir_z,  cur_scatt.dir_z,  cur_mask);                
+                scatt_pack.time   = _mm_blendv_ps(scatt_pack.time,   cur_scatt.time,   cur_mask);  
+
+                scatter_mask = _mm_or_ps(scatter_mask, cur_mask);                
+                for (int j = i; j < 4; ++j) {
+                    if (rec.mat[j] == mat) processed_lanes |= (1 << j);
+                }
+            }
+            return scatter_mask;
+        }
+
+        void ray_color_packet_simd(const Raypackets& pack, const hit_list& world, int depth,vec4& out_r, vec4& out_g, vec4& out_b){
             Raypackets current_packs=pack;
-            //making all have white color
-            __m128 tp_r = _mm_set1_ps(1.0f);
-            __m128 tp_g = _mm_set1_ps(1.0f);
-            __m128 tp_b = _mm_set1_ps(1.0f);
-            // Total Accumulated Light initialized to 0.0 (Black)
+            vec4 tp_r = _mm_set1_ps(1.0f);
+            vec4 tp_g = _mm_set1_ps(1.0f);
+            vec4 tp_b = _mm_set1_ps(1.0f);
+
             out_r = _mm_setzero_ps();
             out_g = _mm_setzero_ps();
             out_b = _mm_setzero_ps();
-            // Active mask for 4 parallel ray lanes (0xFFFFFFFF per lane initially)
-            __m128 active_mask = _mm_cmpeq_ps(_mm_setzero_ps(), _mm_setzero_ps());
+
+            vec4 active_mask = _mm_cmpeq_ps(_mm_setzero_ps(), _mm_setzero_ps());
             for (int bounce = 0; bounce < depth; ++bounce) {
-                // Stop early if all 4 rays in the packet have terminated/missed
                 if (_mm_movemask_ps(active_mask) == 0) break;
+
                 hit_rec rec;
                 Interval4 ray_t(0.001f, infinity);
                 world.hit(current_packs, ray_t, rec);
-                // Identify active rays that missed geometry on this bounce
-                __m128 newly_missed = _mm_andnot_ps(rec.hit_mask, active_mask);
+
+                vec4 newly_missed = _mm_andnot_ps(rec.hit_mask, active_mask);
                 if (_mm_movemask_ps(newly_missed) != 0) {
-                    __m128 bg_r, bg_g, bg_b;
+                    vec4 bg_r, bg_g, bg_b;
                     get_background_simd(current_packs, bg_r, bg_g, bg_b);
-                    // Add (Throughput * Background) ONLY to newly missed lanes
                     out_r=_mm_add_ps(out_r,_mm_and_ps(newly_missed, _mm_mul_ps(tp_r, bg_r)));
                     out_g=_mm_add_ps(out_g,_mm_and_ps(newly_missed, _mm_mul_ps(tp_g, bg_g)));
                     out_b=_mm_add_ps(out_b,_mm_and_ps(newly_missed, _mm_mul_ps(tp_b, bg_b)));
                 }
-                // Turn off lanes that missed geometry
+
                 active_mask = _mm_and_ps(active_mask, rec.hit_mask);  
                 if (_mm_movemask_ps(active_mask) == 0) break;  
-                //material scattering &atenuation
-                //Raypackets scattered_packs;
-                //__m128 atten_r, atten_g, atten_b;
-                //__m128 scatter_mask; 
+                Raypackets scattered_packs;
+                vec4 atten_r, atten_g, atten_b;                
+                vec4 scatter_mask = scatter_materials_simd(current_packs, rec, atten_r, atten_g, atten_b, scattered_packs); 
+                vec4 valid_scatter_mask = _mm_and_ps(active_mask, scatter_mask);
 
-                //scatter_mask = world.scatter(current_packs, rec, atten_r, atten_g, atten_b, scattered_packs);   
-                //  Update Active Throughput for Hit Lanes
-                //tp_r = _mm_mul_ps(tp_r, atten_r);
-                //tp_g = _mm_mul_ps(tp_g, atten_g);
-                //tp_b = _mm_mul_ps(tp_b, atten_b);
+                tp_r = _mm_blendv_ps(tp_r, _mm_mul_ps(tp_r, atten_r), valid_scatter_mask);
+                tp_g = _mm_blendv_ps(tp_g, _mm_mul_ps(tp_g, atten_g), valid_scatter_mask);
+                tp_b = _mm_blendv_ps(tp_b, _mm_mul_ps(tp_b, atten_b), valid_scatter_mask);
 
-                // Set Up Rays for Next Bounce
-                //current_packs = scattered_packs;
-                // Deactivate lanes where rays were absorbed (e.g., black materials or terminated scattering)
-                //active_mask = _mm_and_ps(active_mask, scatter_mask);   
-                
-                // For demonstration, we will terminate rays after the first bounce and accumulate the color from the hit point
-                // 1. Multiply throughput by 0.1 (or 0.5 for 50% reflectance)
-                __m128 atten = _mm_set1_ps(0.1f); 
-                tp_r = _mm_mul_ps(tp_r, atten);
-                tp_g = _mm_mul_ps(tp_g, atten);
-                tp_b = _mm_mul_ps(tp_b, atten);
+                current_packs.orig_x = _mm_blendv_ps(current_packs.orig_x, scattered_packs.orig_x, valid_scatter_mask);
+                current_packs.orig_y = _mm_blendv_ps(current_packs.orig_y, scattered_packs.orig_y, valid_scatter_mask);
+                current_packs.orig_z = _mm_blendv_ps(current_packs.orig_z, scattered_packs.orig_z, valid_scatter_mask);
+                current_packs.dir_x  = _mm_blendv_ps(current_packs.dir_x,  scattered_packs.dir_x,  valid_scatter_mask);
+                current_packs.dir_y  = _mm_blendv_ps(current_packs.dir_y,  scattered_packs.dir_y,  valid_scatter_mask);
+                current_packs.dir_z  = _mm_blendv_ps(current_packs.dir_z,  scattered_packs.dir_z,  valid_scatter_mask);
+                current_packs.time   = _mm_blendv_ps(current_packs.time,   scattered_packs.time,   valid_scatter_mask);
 
-                // 2. Set new ray origins to hit points (rec.p)
-                current_packs.orig_x = rec.p_x;
-                current_packs.orig_y = rec.p_y;
-                current_packs.orig_z = rec.p_z;
-
-                // 3. Generate random unit vectors for 4 lanes
-                vec3 rand0 = random_unit_vector();
-                vec3 rand1 = random_unit_vector();
-                vec3 rand2 = random_unit_vector();
-                vec3 rand3 = random_unit_vector();
-
-                __m128 rand_x = _mm_set_ps(rand3.x(), rand2.x(), rand1.x(), rand0.x());
-                __m128 rand_y = _mm_set_ps(rand3.y(), rand2.y(), rand1.y(), rand0.y());
-                __m128 rand_z = _mm_set_ps(rand3.z(), rand2.z(), rand1.z(), rand0.z());
-
-                // 4. Set new direction = normal + random_unit_vector()
-                current_packs.dir_x = _mm_add_ps(rec.nx, rand_x);
-                current_packs.dir_y = _mm_add_ps(rec.ny, rand_y);
-                current_packs.dir_z = _mm_add_ps(rec.nz, rand_z);
+                active_mask = _mm_and_ps(active_mask, scatter_mask);                
             }
 
         }
 
-        point3 defocus_disk_sample() const {
-            auto p = random_in_unit_disk();
-            return camera_center + (p.x() * defocus_disk_u) + (p.y() * defocus_disk_v);
-        }     
+        //Shirley's Concentric Disk Mapping
+       inline void defocus_disk_sample_simd4(__m128& out_orig_x, __m128& out_orig_y, __m128& out_orig_z) const {
+            __m128 u1, u2;
+            random_float_simd4(u1); 
+            random_float_simd4(u2);
+
+            // Radius r = sqrt(u1), Angle theta = 2 * pi * u2
+            __m128 r = _mm_sqrt_ps(u1);
+            __m128 theta = _mm_mul_ps(_mm_set1_ps(2.0f * pi), u2);
+            __m128 sin_th, cos_th;
+            sincos_simd4(theta, sin_th, cos_th);
+            __m128 res_x = _mm_mul_ps(r, cos_th); 
+            __m128 res_y = _mm_mul_ps(r, sin_th);
+            // Transform disk sample into 3D world-space lens offset
+            out_orig_x = _mm_add_ps(v_cam_center_x, _mm_add_ps(_mm_mul_ps(res_x, v_def_u_x), _mm_mul_ps(res_y, v_def_v_x)));
+            out_orig_y = _mm_add_ps(v_cam_center_y, _mm_add_ps(_mm_mul_ps(res_x, v_def_u_y), _mm_mul_ps(res_y, v_def_v_y)));
+            out_orig_z = _mm_add_ps(v_cam_center_z, _mm_add_ps(_mm_mul_ps(res_x, v_def_u_z), _mm_mul_ps(res_y, v_def_v_z)));
+        }
 };

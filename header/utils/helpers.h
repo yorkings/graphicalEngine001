@@ -7,7 +7,7 @@
 
 struct RenderQueries {
     std::string filename;
-    int width =1920;
+    int width =1500;
     int samples = 100;
 };
 
@@ -19,7 +19,7 @@ RenderQueries fetch_user_queries() {
         queries.filename = "render";
     }
     std::filesystem::create_directories("image_data");
-    queries.filename="image_data/" +queries.filename +get_time_current();
+    queries.filename="image_data/" +queries.filename +"_"+get_time_current();
     return queries;
 }
 // 0. INITIALIZE VULKAN COMPUTE (HEADLESS)

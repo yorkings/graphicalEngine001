@@ -90,30 +90,30 @@ inline vec3 unit_vector(const vec3& v) {
 using point3=vec3;
 using color=vec3;
 
-//random vector generation
-inline vec3 random_vec3(float min,float max){
-    return vec3(random_float(min,max),random_float(min,max),random_float(min,max));
-}
-inline vec3 random_unit_vector(){
-    while(true){
-        auto p=random_vec3(-1.0f,1.0f);
-        auto len_squared=p.length_squared();
-        if(1e-8<len_squared && len_squared<1)return unit_vector(p);
-    }
-}
+// //random vector generation
+// inline vec3 random_vec3(float min,float max){
+//     return vec3(random_float(min,max),random_float(min,max),random_float(min,max));
+// }
+// inline vec3 random_unit_vector(){
+//     while(true){
+//         auto p=random_vec3(-1.0f,1.0f);
+//         auto len_squared=p.length_squared();
+//         if(1e-8<len_squared && len_squared<1)return unit_vector(p);
+//     }
+// }
 
-inline vec3 random_in_unit_disk(){
-    while(true){
-        auto p=random_vec3(-1.0f,1.0f);
-        if(p.length_squared()>=1) continue;
-        return p;
-    }
-}
-inline vec3 random_on_hemisphere(const vec3 &normal){
-    vec3 in_unit_sphere = random_unit_vector();
-    if (dot(in_unit_sphere, normal) > 0.0f) // In the same hemisphere as the normal
-        return in_unit_sphere;
-    else
-        return -in_unit_sphere;
-}
+// inline vec3 random_in_unit_disk(){
+//     while(true){
+//         auto p=random_vec3(-1.0f,1.0f);
+//         if(p.length_squared()>=1) continue;
+//         return p;
+//     }
+// }
+// inline vec3 random_on_hemisphere(const vec3 &normal){
+//     vec3 in_unit_sphere = random_unit_vector();
+//     if (dot(in_unit_sphere, normal) > 0.0f) // In the same hemisphere as the normal
+//         return in_unit_sphere;
+//     else
+//         return -in_unit_sphere;
+// }
 
