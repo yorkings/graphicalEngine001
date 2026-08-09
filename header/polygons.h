@@ -7,9 +7,9 @@ class sphere: public hitable{
         vec4 cen_x,cen_y,cen_z;
         vec4 radius;
         vec4 inv_radius;
-        const material* mat;
+        shared_ptr<material> mat;
     public:
-        sphere(vec3 center, float r,std::shared_ptr<material> mat_ptr): mat(mat_ptr.get()){
+        sphere(vec3 center, float r,shared_ptr<material> mat_ptr): mat(mat_ptr){
             cen_x = _mm_set1_ps(center.x());
             cen_y = _mm_set1_ps(center.y());
             cen_z = _mm_set1_ps(center.z());
@@ -33,11 +33,12 @@ class sphere: public hitable{
             vec4 c=_mm_sub_ps(oc_sq,_mm_mul_ps(radius, radius));
 
             vec4 discriminant = _mm_sub_ps(_mm_mul_ps(half_b, half_b), _mm_mul_ps(a, c));
-            vec4 safe_disc = _mm_max_ps(discriminant, _mm_setzero_ps());
+           
             vec4 has_hit = _mm_cmpge_ps(discriminant, _mm_setzero_ps());
             if (_mm_movemask_ps(has_hit) == 0) {
                 return false;
             }
+            vec4 safe_disc = _mm_max_ps(discriminant, _mm_setzero_ps());
             vec4 sqrtd = _mm_sqrt_ps(safe_disc);
             // Single reciprocal division replaces two vector divisions
             vec4 inv_a = _mm_div_ps(_mm_set1_ps(1.0f), a);
@@ -65,7 +66,7 @@ class sphere: public hitable{
             vec4 out_nz = _mm_mul_ps(_mm_sub_ps(rec.p_z, cen_z), inv_radius);
 
             rec.set_face_normal_4(r_packs, out_nx, out_ny, out_nz);
-            rec.mat.fill(mat);
+            rec.mat.fill(mat.get());
             return true;
         }
 };

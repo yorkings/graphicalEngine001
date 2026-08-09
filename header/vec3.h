@@ -71,14 +71,15 @@ inline float dot(const vec3& u, const vec3& v) {
     __m128 dot_res = _mm_dp_ps(u.v, v.v, 0x71);
     return _mm_cvtss_f32(dot_res);
 }
-inline vec3 cross(const vec3 &u, const vec3 &v){
-    __m128 u_yzx =_mm_shuffle_ps(u.v,u.v,_MM_SHUFFLE(3,0,2,1));
-    __m128 v_zxy =_mm_shuffle_ps(v.v,v.v,_MM_SHUFFLE(3,1,0,2));
-    __m128 u_zxy =_mm_shuffle_ps(u.v,u.v,_MM_SHUFFLE(3,1,0,2));    
-    __m128 v_yzx =_mm_shuffle_ps(v.v,v.v,_MM_SHUFFLE(3,0,2,1));
+inline vec3 cross(const vec3 &a, const vec3 &b){
+    __m128 a_yzx =_mm_shuffle_ps(a.v,a.v,_MM_SHUFFLE(3,0,2,1));
+    __m128 b_zxy =_mm_shuffle_ps(b.v,b.v,_MM_SHUFFLE(3,1,0,2));
+    
+    __m128 a_zxy =_mm_shuffle_ps(a.v,a.v,_MM_SHUFFLE(3,1,0,2));    
+    __m128 b_yzx =_mm_shuffle_ps(b.v,b.v,_MM_SHUFFLE(3,0,2,1));
 
-    __m128 left  = _mm_mul_ps(u_yzx, v_zxy);
-    __m128 right = _mm_mul_ps(u_zxy, v_yzx);
+    __m128 left  = _mm_mul_ps(a_yzx, b_zxy);
+    __m128 right = _mm_mul_ps(a_zxy, b_yzx);
 
     return vec3(_mm_sub_ps(left, right));
 
@@ -90,30 +91,5 @@ inline vec3 unit_vector(const vec3& v) {
 using point3=vec3;
 using color=vec3;
 
-// //random vector generation
-// inline vec3 random_vec3(float min,float max){
-//     return vec3(random_float(min,max),random_float(min,max),random_float(min,max));
-// }
-// inline vec3 random_unit_vector(){
-//     while(true){
-//         auto p=random_vec3(-1.0f,1.0f);
-//         auto len_squared=p.length_squared();
-//         if(1e-8<len_squared && len_squared<1)return unit_vector(p);
-//     }
-// }
 
-// inline vec3 random_in_unit_disk(){
-//     while(true){
-//         auto p=random_vec3(-1.0f,1.0f);
-//         if(p.length_squared()>=1) continue;
-//         return p;
-//     }
-// }
-// inline vec3 random_on_hemisphere(const vec3 &normal){
-//     vec3 in_unit_sphere = random_unit_vector();
-//     if (dot(in_unit_sphere, normal) > 0.0f) // In the same hemisphere as the normal
-//         return in_unit_sphere;
-//     else
-//         return -in_unit_sphere;
-// }
 

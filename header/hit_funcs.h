@@ -12,12 +12,15 @@ struct hit_rec{
     vec4 hit_mask;
     vec4 front_face;
     std::array<const material*,4> mat;
+    hit_rec():t(_mm_set1_ps(infinity)),p_x(_mm_setzero_ps()),p_y(_mm_setzero_ps()),p_z(_mm_setzero_ps()),
+        nx(_mm_setzero_ps()),ny(_mm_setzero_ps()),nz(_mm_setzero_ps()),hit_mask(_mm_setzero_ps()),front_face(_mm_setzero_ps()){
+            mat.fill(nullptr);
+        }
    inline void set_face_normal_4(const Raypackets& r, vec4 out_nx, vec4 out_ny, vec4 out_nz) {
         vec4 dot_prod;
-        dot_simd4(r.dir_x,r.dir_y,r.dir_z,out_nx,out_ny,out_nz,dot_prod);
-              
+        dot_simd4(r.dir_x,r.dir_y,r.dir_z,out_nx,out_ny,out_nz,dot_prod);     
         front_face = _mm_cmplt_ps(dot_prod, _mm_setzero_ps());
-        vec4 is_back_face = _mm_cmpgt_ps(dot_prod, _mm_setzero_ps());
+        vec4 is_back_face =_mm_xor_ps(front_face, _mm_castsi128_ps(_mm_set1_epi32(-1))); // Invert front_face to get back_face mask
         //Flip the normal sign bit for back-facing rays using XOR 
         vec4 sign_bit = _mm_set1_ps(-0.0f); 
         vec4 flip_mask = _mm_and_ps(is_back_face, sign_bit);
@@ -37,13 +40,10 @@ struct hitable{
 class hit_list:public hitable{
     public:
         std::vector<shared_ptr<hitable>> objects;
-        std::vector<shared_ptr<material>> materials;
         ~hit_list()=default;
         hit_list(){}
         hit_list(shared_ptr<hitable>object){add(object);}
-
         void add(shared_ptr<hitable>object){return objects.push_back(object);}
-        void add_material(shared_ptr<material> mat) {materials.push_back(mat);}
         void clear(){objects.clear();}
 
         virtual bool hit(const Raypackets& r, Interval4 ray_t, hit_rec& rec) const {

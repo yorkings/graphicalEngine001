@@ -23,7 +23,8 @@
 
 using std::make_shared;
 using std::shared_ptr;
-
+using vec4=__m128;
+using vec4i=__m128i;
 std::string get_time_current(){
     auto now =std::chrono::system_clock::now();
     std::time_t now_time= std::chrono::system_clock::to_time_t(now);
@@ -35,6 +36,7 @@ std::string get_time_current(){
 
 const float infinity =std::numeric_limits<float>::infinity();
 const float pi = M_PI; 
+
 inline float degrees_to_radians(float theta){
     return theta*(pi/180.0f);
 }
@@ -123,18 +125,3 @@ inline void seed_rng_simd4_quad(int i, int j, int sample_idx) {
     rng_state_simd4 = _mm_set_epi32(p3 ^ 0x6C078965u,p2 ^ 0x5D588B65u,p1 ^ 0x41C64E6Du,p0 ^ 0x997F4A7Bu);
 }
 
-inline void sin_simd4(__m128 theta, __m128 &sin_theta) {
-    __m128 dummy_cos;
-    sincos_simd4(theta, sin_theta, dummy_cos);
-}
-
-inline void cos_simd4(__m128 theta, __m128 &cos_theta) {
-    __m128 dummy_sin;
-    sincos_simd4(theta, dummy_sin, cos_theta);
-}
-
-inline void tan_simd4(__m128 theta, __m128 &tan_theta) {
-    __m128 s, c;
-    sincos_simd4(theta, s, c);
-    tan_theta = _mm_div_ps(s, c);
-}

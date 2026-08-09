@@ -177,10 +177,14 @@ class camera{
 
         }
          
-        inline static vec4 sanitize_simd4(const vec4& v) {
-            vec4 is_nan_or_inf = _mm_cmpunord_ps(v, v);
-            vec4 clean = _mm_blendv_ps(v, _mm_setzero_ps(), is_nan_or_inf);
-            return _mm_max_ps(clean, _mm_setzero_ps());
+        inline static vec4 sanitize_simd4(const vec4& x){
+            const vec4 zero = _mm_setzero_ps();        
+            vec4 nan_mask = _mm_cmpunord_ps(x, x);
+            vec4 abs_x = _mm_andnot_ps(_mm_set1_ps(-0.0f),x);        
+            vec4 inf_mask = _mm_cmpeq_ps(abs_x,_mm_set1_ps(infinity));        
+            vec4 bad_mask = _mm_or_ps(nan_mask, inf_mask);        
+            vec4 clean = _mm_blendv_ps(x, zero, bad_mask);        
+            return _mm_max_ps(clean, zero);
         }
   
         inline Raypackets get_ray_packs(int i,int j,int s_i = 0, int s_j = 0)const{
@@ -234,7 +238,7 @@ class camera{
             bg_b = _mm_add_ps(one_minus_t, _mm_mul_ps(t, _mm_set1_ps(1.0f)));
         }
         
-        inline vec4 scatter_materials_simd(const Raypackets& in_pack,const hit_rec& rec,vec4& atten_r, vec4& atten_g, vec4& atten_b,Raypackets& scatt_pack) {
+        inline vec4 scatter_materials_simd(const Raypackets& in_pack,const hit_rec& rec,const vec4& active_mask,vec4& atten_r, vec4& atten_g, vec4& atten_b,Raypackets& scatt_pack) {
             atten_r = _mm_setzero_ps();
             atten_g = _mm_setzero_ps();
             atten_b = _mm_setzero_ps(); 
@@ -249,8 +253,8 @@ class camera{
 
             vec4 scatter_mask = _mm_setzero_ps();
             int processed_lanes = 0;
-
-            int hit_bits = _mm_movemask_ps(rec.hit_mask);            
+            vec4 active_hit_mask =_mm_and_ps(active_mask, rec.hit_mask);
+            int hit_bits = _mm_movemask_ps(active_hit_mask);            
             for (int i = 0; i < 4; ++i) {
                 if (!(hit_bits & (1 << i)) || (processed_lanes & (1 << i))) continue;                
                 const material* mat = rec.mat[i];
@@ -261,10 +265,10 @@ class camera{
                         rec.mat[1] == mat ? -1 : 0,
                         rec.mat[0] == mat ? -1 : 0
                     )); 
-                match_mask = _mm_and_ps(match_mask, rec.hit_mask);                   
+                match_mask = _mm_and_ps(match_mask,active_hit_mask);                   
                 vec4 cur_atten_r, cur_atten_g, cur_atten_b;
                 Raypackets cur_scatt;
-                vec4 cur_mask = mat->scatter(in_pack, rec, cur_atten_r, cur_atten_g, cur_atten_b, cur_scatt);
+                vec4 cur_mask = mat->scatter(in_pack, rec, active_hit_mask,cur_atten_r, cur_atten_g, cur_atten_b, cur_scatt);
                 cur_mask = _mm_and_ps(cur_mask, match_mask);
 
                 atten_r = _mm_blendv_ps(atten_r, cur_atten_r, cur_mask);
@@ -318,7 +322,7 @@ class camera{
                 if (_mm_movemask_ps(active_mask) == 0) break;  
                 Raypackets scattered_packs;
                 vec4 atten_r, atten_g, atten_b;                
-                vec4 scatter_mask = scatter_materials_simd(current_packs, rec, atten_r, atten_g, atten_b, scattered_packs); 
+                vec4 scatter_mask = scatter_materials_simd(current_packs, rec,active_mask, atten_r, atten_g, atten_b, scattered_packs); 
                 vec4 valid_scatter_mask = _mm_and_ps(active_mask, scatter_mask);
 
                 tp_r = _mm_blendv_ps(tp_r, _mm_mul_ps(tp_r, atten_r), valid_scatter_mask);

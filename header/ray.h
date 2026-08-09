@@ -1,5 +1,4 @@
 #pragma once
-#include "vec3.h"
 #include "vec3_simd4.h"
 class Ray {
     private:

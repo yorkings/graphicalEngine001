@@ -14,11 +14,10 @@ int main() {
     // Setup Scene & Camera
     hit_list world;
     auto ground_material = make_shared<lambertian_simd4>(color(0.5, 0.5, 0.5));
-    world.add_material(ground_material);
     world.add(make_shared<sphere>(point3(0, -1000, 0), 1000, ground_material));
 
-    for(int a = -11; a < 11; a++){
-        for (int b = -11; b < 11; b += 4) {
+    for(int a = -80; a < 80; a++){
+        for (int b = -80; b < 80; b += 4) {
             vec4 vec_choose_mat, vec_off_a, vec_off_b;
             random_float_simd4(vec_choose_mat);
             random_float_simd4(vec_off_a);
@@ -66,7 +65,6 @@ int main() {
                        sphere_mat = make_shared<dielectric_simd4>(1.5f);
                         
                     }
-                    world.add_material(sphere_mat);
                     world.add(make_shared<sphere>(center, 0.2f, sphere_mat));
                 }
             }
@@ -74,15 +72,12 @@ int main() {
     }
     // Three large hero spheres
     auto material1 = make_shared<dielectric_simd4>(1.5f);
-    world.add_material(material1);
     world.add(make_shared<sphere>(point3(0.0f, 1.0f, 0.0f), 1.0f, material1));
 
     auto material2 = make_shared<lambertian_simd4>(color(0.4f, 0.2f, 0.1f));
-    world.add_material(material2);
     world.add(make_shared<sphere>(point3(-4.0f, 1.0f, 0.0f), 1.0f, material2));
 
     auto material3 = make_shared<metal_simd4>(color(0.7f, 0.6f, 0.5f), 0.0f);
-    world.add_material(material3);
     world.add(make_shared<sphere>(point3(4.0f, 1.0f, 0.0f), 1.0f, material3));
 
 
