@@ -7,7 +7,7 @@
 
 struct RenderQueries {
     std::string filename;
-    int width =1500;
+    int width =1920;
     int samples = 100;
 };
 

@@ -5,9 +5,16 @@ class Ray {
         vec3 orig;
         vec3 dir;
         float tm;
+        static inline vec3 sanitize_dir(vec3 d) {
+            constexpr float eps = 1e-8f;
+            float x = (std::abs(d.x()) < eps) ? (d.x() < 0.0f ? -eps : eps) : d.x();
+            float y = (std::abs(d.y()) < eps) ? (d.y() < 0.0f ? -eps : eps) : d.y();
+            float z = (std::abs(d.z()) < eps) ? (d.z() < 0.0f ? -eps : eps) : d.z();
+            return vec3(x, y, z);
+        }
     public:        
         Ray(vec3 org, vec3 dir) : Ray(org,dir,0.0f) {}
-        Ray(vec3 org, vec3 dir,float tm) : orig(org), dir(dir),tm(tm) {}
+        Ray(vec3 org, vec3 dir,float tm) : orig(org), dir(sanitize_dir(dir)),tm(tm) {}
         inline point3 origin() const    { return orig; }
         inline vec3 direction() const { return dir; }
         inline float time()const {return tm;}
@@ -19,9 +26,16 @@ class Ray {
 struct alignas(16) Raypackets {
     vec4 orig_x, orig_y, orig_z;
     vec4 dir_x,  dir_y,  dir_z;
+    vec4 inv_dir_x, inv_dir_y, inv_dir_z;
     vec4 time;
     vec4 t_max;
     Raypackets() = default;
+    inline void update_inv_dir() {
+        const vec4 one = _mm_set1_ps(1.0f);
+        inv_dir_x = _mm_div_ps(one, dir_x);
+        inv_dir_y = _mm_div_ps(one, dir_y);
+        inv_dir_z = _mm_div_ps(one, dir_z);
+    }
     inline Raypackets(const Ray r[4]) {
         orig_x = _mm_set_ps(r[3].origin().x(), r[2].origin().x(), r[1].origin().x(), r[0].origin().x());
         orig_y = _mm_set_ps(r[3].origin().y(), r[2].origin().y(), r[1].origin().y(), r[0].origin().y());
@@ -30,6 +44,7 @@ struct alignas(16) Raypackets {
         dir_x  = _mm_set_ps(r[3].direction().x(), r[2].direction().x(), r[1].direction().x(), r[0].direction().x());
         dir_y  = _mm_set_ps(r[3].direction().y(), r[2].direction().y(), r[1].direction().y(), r[0].direction().y());
         dir_z  = _mm_set_ps(r[3].direction().z(), r[2].direction().z(), r[1].direction().z(), r[0].direction().z());
+        update_inv_dir();
         time  = _mm_set_ps(r[3].time(), r[2].time(), r[1].time(), r[0].time());
         t_max  = _mm_set1_ps(1e30f);
     }

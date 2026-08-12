@@ -2,7 +2,7 @@
 #include "general.h"
 #include "intervals.h"
 #include <cstdint>
-Interval4 intv(0.0f,1.0f);
+inline Interval4 intv(0.0f,1.0f);
 
 inline vec4 clamp_zero_one(vec4 v){    
     return intv.clamp(v);

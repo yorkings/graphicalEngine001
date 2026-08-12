@@ -1,6 +1,7 @@
 #include "header/general.h"
 #include "header/polygons.h"
 #include "header/camera.h"
+#include "header/bvh_node.h"
 #include "header/utils/helpers.h"
 
 
@@ -16,8 +17,8 @@ int main() {
     auto ground_material = make_shared<lambertian_simd4>(color(0.5, 0.5, 0.5));
     world.add(make_shared<sphere>(point3(0, -1000, 0), 1000, ground_material));
 
-    for(int a = -80; a < 80; a++){
-        for (int b = -80; b < 80; b += 4) {
+    for(int a = -11; a < 11; a++){
+        for (int b = -11; b < 11; b += 4) {
             vec4 vec_choose_mat, vec_off_a, vec_off_b;
             random_float_simd4(vec_choose_mat);
             random_float_simd4(vec_off_a);
@@ -36,14 +37,20 @@ int main() {
                     shared_ptr<material> sphere_mat;
                     if (choose_mat[k] < 0.8f) {
                         //difuse material
-                        vec4 r1, g1, b1, r2, g2, b2;
+                        vec4 r1, g1, b1, r2, g2, b2,radn;
                         random_float_simd4(r1); random_float_simd4(g1); random_float_simd4(b1);
                         random_float_simd4(r2); random_float_simd4(g2); random_float_simd4(b2);
-                        alignas(16) float ar1[4], ag1[4], ab1[4], ar2[4], ag2[4], ab2[4];
+                        random_float_simd4(radn,0.0f,0.5f);
+
+                        alignas(16) float ar1[4], ag1[4], ab1[4], ar2[4], ag2[4], ab2[4],randno[4];
                         _mm_store_ps(ar1, r1); _mm_store_ps(ag1, g1); _mm_store_ps(ab1, b1);
                         _mm_store_ps(ar2, r2); _mm_store_ps(ag2, g2); _mm_store_ps(ab2, b2);
+                        _mm_store_ps(randno,radn);
+
                         color albedo(ar1[k] * ar2[k], ag1[k] * ag2[k], ab1[k] * ab2[k]);
-                        sphere_mat = make_shared<lambertian_simd4>(albedo);                        
+                        sphere_mat = make_shared<lambertian_simd4>(albedo);
+                        auto center_2=center +vec3(0,randno[k],0);  
+                        world.add(make_shared<sphere>(center,center_2, 0.2f, sphere_mat));                      
                     }
                     else if (choose_mat[k] < 0.95f) {
                         // Metal material
@@ -58,14 +65,16 @@ int main() {
                         _mm_store_ps(ab, b_col); _mm_store_ps(afuzz, fuzz_vec);
 
                         color albedo(ar[k], ag[k], ab[k]);
-                        sphere_mat = make_shared<metal_simd4>(albedo, afuzz[k]);                        
+                        sphere_mat = make_shared<metal_simd4>(albedo, afuzz[k]); 
+                        world.add(make_shared<sphere>(center, 0.2f, sphere_mat));                       
                     } 
                     else {
                         // Glass material
-                       sphere_mat = make_shared<dielectric_simd4>(1.5f);
+                        sphere_mat = make_shared<dielectric_simd4>(1.5f);
+                        world.add(make_shared<sphere>(center, 0.2f, sphere_mat));
                         
                     }
-                    world.add(make_shared<sphere>(center, 0.2f, sphere_mat));
+                   
                 }
             }
         }
@@ -80,6 +89,9 @@ int main() {
     auto material3 = make_shared<metal_simd4>(color(0.7f, 0.6f, 0.5f), 0.0f);
     world.add(make_shared<sphere>(point3(4.0f, 1.0f, 0.0f), 1.0f, material3));
 
+    auto bvh_root = make_shared<bvh_node4>(world);
+    hit_list accelerated_world;
+    accelerated_world.add(bvh_root);
 
     camera cam;
     cam.image_width = user_config.width;
@@ -87,7 +99,7 @@ int main() {
     cam.vfov=20.0f;
     cam.lookFrom=point3(13,2,3);
     cam.lookAt = point3(0,0,0);
-    cam.defocus_angle = 0.0f;
+    cam.defocus_angle = 0.6f;
 
 
     
@@ -95,7 +107,7 @@ int main() {
     std::vector<uint32_t> screen_pixels;
 
     //Render CPU Ray Tracer & Save Output
-    cam.render(world, screen_pixels);
+    cam.render(accelerated_world, screen_pixels);
     save_image(user_config.filename, cam.image_width, cam.image_height, screen_pixels);
 
     // Create Window & Upload Texture for Viewing

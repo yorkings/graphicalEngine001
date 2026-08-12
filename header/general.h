@@ -25,7 +25,7 @@ using std::make_shared;
 using std::shared_ptr;
 using vec4=__m128;
 using vec4i=__m128i;
-std::string get_time_current(){
+inline std::string get_time_current(){
     auto now =std::chrono::system_clock::now();
     std::time_t now_time= std::chrono::system_clock::to_time_t(now);
     std::tm* local_time = std::localtime(&now_time);
@@ -118,10 +118,10 @@ inline void random_float_simd4(__m128& out_rand, float min, float max) {
 }
 
 inline void seed_rng_simd4_quad(int i, int j, int sample_idx) {
-    uint32_t p0 = (i + 0) * 1973u + (j + 0) * 9277u + sample_idx * 26699u | 1u;
-    uint32_t p1 = (i + 1) * 1973u + (j + 0) * 9277u + sample_idx * 26699u | 1u;
-    uint32_t p2 = (i + 0) * 1973u + (j + 1) * 9277u + sample_idx * 26699u | 1u;
-    uint32_t p3 = (i + 1) * 1973u + (j + 1) * 9277u + sample_idx * 26699u | 1u;
+    uint32_t p0 = ((i + 0) * 1973u + (j + 0) * 9277u + sample_idx * 26699u) | 1u;
+    uint32_t p1 = ((i + 1) * 1973u + (j + 0) * 9277u + sample_idx * 26699u) | 1u;
+    uint32_t p2 = ((i + 0) * 1973u + (j + 1) * 9277u + sample_idx * 26699u) | 1u;
+    uint32_t p3 = ((i + 1) * 1973u + (j + 1) * 9277u + sample_idx * 26699u) | 1u;
     rng_state_simd4 = _mm_set_epi32(p3 ^ 0x6C078965u,p2 ^ 0x5D588B65u,p1 ^ 0x41C64E6Du,p0 ^ 0x997F4A7Bu);
 }
 
