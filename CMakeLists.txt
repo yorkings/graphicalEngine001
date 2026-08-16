@@ -28,6 +28,8 @@ FetchContent_MakeAvailable(vk_bootstrap)
 find_package(OpenMP REQUIRED)
 set(SOURCE_FILES
     src/camera.cpp
+    src/functions.cpp
+    src/textures.cpp
 )
 
 add_executable(GraphicsRenderer main.cpp ${SOURCE_FILES})
